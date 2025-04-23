@@ -90,7 +90,7 @@ export default function Home() {
     const simulateTx = await buildTx(0n);
     const fee = simulateTx.toTransaction().body().fee();
 
-    const tx = await buildTx(2n * fee);
+    const tx = await buildTx(2n * fee); // (1n * fee) if you want to make the user pay for the network fee, something like https://youtu.be/DAxM1LgVvpQ
 
     const vendorPKbytes = fromHex(vendorPK);
     const vendorPKbech32 = CML.PrivateKey.from_normal_bytes(vendorPKbytes).to_bech32();
