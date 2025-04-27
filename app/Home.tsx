@@ -72,7 +72,7 @@ export default function Home() {
     if (!lucid.wallet()) lucid.selectWallet.fromAPI(api);
 
     const vendorPK = "................................................................";
-    const vendorAddress = "addr_test1qpyw97punq98fplqcwv5cnf4are34qvl9zmdhyv6r37cltp0v9xv2x47ynm7pgyrkvcnqgq3mt5ugx8wycecwgqhcr3q5eksf6";
+    const vendorAddress = "addr_test1qp9rejf8kadel3s78g3ervyrp23d0f6mnyp609je2yflaz6xc8d8r9ahg6awf9xpl79379dhghyan59cp92j4g0v0njqz63td5";
 
     const vendorUTXOs = (await lucid.utxosAt(vendorAddress)).filter((utxo) => Object.keys(utxo.assets).length === 1); // filter out other tokens
     const vendorFunds = vendorUTXOs.reduce((sum, { assets }) => sum + assets.lovelace, 0n);
@@ -83,19 +83,36 @@ export default function Home() {
       lucid
         .newTx()
         .collectFrom([...vendorUTXOs, ...addressUTXOs])
-        .pay.ToAddress(vendorAddress, { lovelace: vendorFunds - fee, [PaymentToken.assetUnit]: 1n })
+        .pay.ToAddress(vendorAddress, { [PaymentToken.assetUnit]: 1n })
+        .pay.ToAddress(vendorAddress, { lovelace: vendorFunds - fee })
         .pay.ToAddress(address, { lovelace: fee })
         .complete();
 
     const simulateTx = await buildTx(0n);
+    const minADA = simulateTx.toTransaction().body().outputs().get(0).amount().coin();
     const fee = simulateTx.toTransaction().body().fee();
+    console.log(simulateTx.toTransaction().body().to_js_value());
 
-    const tx = await buildTx(2n * fee); // (1n * fee) if you want to make the user pay for the network fee, something like https://youtu.be/DAxM1LgVvpQ
+    const tx = await buildTx(minADA + 2n * fee); // (minADA + 1n * fee) if you want to make the user pay for the network fee, something like https://youtu.be/DAxM1LgVvpQ
+
+    // if you need to serialise the tx to CBOR and share it with multiple users:
+    const txCBOR = tx.toCBOR();
+    console.log({ txCBOR }); // 1. save to DB
 
     const vendorPKbytes = fromHex(vendorPK);
     const vendorPKbech32 = CML.PrivateKey.from_normal_bytes(vendorPKbytes).to_bech32();
-    const txSigned = await tx.assemble([await tx.partialSign.withPrivateKey(vendorPKbech32), await tx.partialSign.withWallet()]).complete();
-    const txHash = await txSigned.submit();
+
+    // 2. retrieve from DB and prompt the user to partially sign
+    const partiallySigned1 = await lucid.fromTx(txCBOR).partialSign.withWallet();
+    console.log({ partiallySigned1 }); // 3. save to DB
+
+    // 4. or, retrieve from DB and partially sign with PK
+    const partiallySigned2 = await lucid.fromTx(txCBOR).partialSign.withPrivateKey(vendorPKbech32);
+    console.log({ partiallySigned2 }); // 5. save to DB
+
+    // 6. retrieve txCBOR, partiallySigned1 and partiallySigned2 from DB
+    const txSigned = await lucid.fromTx(txCBOR).assemble([partiallySigned1, partiallySigned2]).complete();
+    const txHash = await txSigned.submit(); // 7. assemble and submit the transaction
 
     return txHash;
   }
